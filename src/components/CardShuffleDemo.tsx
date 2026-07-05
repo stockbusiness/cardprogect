@@ -8,26 +8,50 @@ import {
   useRef,
   useState,
 } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion, type Transition } from "framer-motion";
 import TarotCard from "@/components/TarotCard";
 import ResultView from "@/components/ResultView";
+import MagicParticles from "@/components/MagicParticles";
+import VortexEffect from "@/components/VortexEffect";
+import FloatingReactionCard, {
+  type ReactionMode,
+} from "@/components/FloatingReactionCard";
 import { CARDS, CARD_COUNT } from "@/lib/cards";
+import type { Phase } from "@/lib/types";
 
-type Phase = "idle" | "fan" | "scatter" | "grid" | "reveal";
+// キーフレーム配列(nullは「現在値から」)にも対応した値型
+type Kf = number | Array<number | null>;
 
 type Target = {
-  x: number;
-  y: number;
-  rotate: number;
-  scale: number;
-  opacity: number;
+  x: Kf;
+  y: Kf;
+  rotate: Kf;
+  scale: Kf;
+  opacity: Kf;
+  zIndex: number;
+};
+
+// シャッフル中(storm)の周回軌道。楕円軌道をキーフレーム化し、
+// repeat: Infinity + linear でシームレスに回し続ける。
+type StormOrbit = {
+  front: boolean; // 前面で大きく舞うカードか(約1/3)
+  closeup: boolean; // 手前に大きく迫ってくるカードか
+  dir: 1 | -1; // 回転方向
+  duration: number;
+  x: number[];
+  y: number[];
+  rotate: number[];
+  scale: number[];
   zIndex: number;
 };
 
 const COLS = 6;
 const ROWS = 8;
 const GAP = 5;
-const CARD_RATIO = 1.5; // 縦横比(タロット風の縦長)
+const CARD_RATIO = 1.5;
+const ORBIT_STEPS = 8;
+// 渦→整列後にカードが正面(0度相当)を向くための累積回転量(360の倍数)
+const SPIN_TURNS = 1080;
 
 // SSRとクライアントで一致する決定的な擬似乱数(初期スタックの揺らぎ用)
 function pseudoRandom(n: number) {
@@ -35,12 +59,63 @@ function pseudoRandom(n: number) {
   return x - Math.floor(x);
 }
 
+function makeStormOrbits(bw: number, bh: number): StormOrbit[] {
+  let closeupLeft = 5;
+  return Array.from({ length: CARD_COUNT }, (_, i) => {
+    const front = Math.random() < 0.34;
+    let closeup = false;
+    if (front && closeupLeft > 0 && Math.random() < 0.35) {
+      closeup = true;
+      closeupLeft--;
+    }
+    const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
+    const rx = (front ? 0.26 + Math.random() * 0.16 : 0.12 + Math.random() * 0.14) * bw;
+    const ry = (front ? 0.2 + Math.random() * 0.14 : 0.1 + Math.random() * 0.1) * bh;
+    const cx = (Math.random() * 2 - 1) * bw * 0.1;
+    const cy = (Math.random() * 2 - 1) * bh * 0.1;
+    const phi = Math.random() * Math.PI * 2;
+    const base = closeup
+      ? 1.7
+      : front
+        ? 1.0 + Math.random() * 0.5
+        : 0.55 + Math.random() * 0.2;
+    const amp = closeup ? 0.55 : front ? 0.3 : 0.12;
+
+    const x: number[] = [];
+    const y: number[] = [];
+    const rotate: number[] = [];
+    const scale: number[] = [];
+    for (let t = 0; t <= ORBIT_STEPS; t++) {
+      const a = phi + (dir * Math.PI * 2 * t) / ORBIT_STEPS;
+      x.push(cx + Math.cos(a) * rx);
+      y.push(cy + Math.sin(a) * ry);
+      // 720°はループ境界(0°)と見た目が一致するため継ぎ目が出ない
+      rotate.push((dir * 720 * t) / ORBIT_STEPS);
+      // sinの1周期分なのでループ境界でスケールも一致する
+      scale.push(base * (1 + amp * Math.sin(phi * 3 + (Math.PI * 2 * t) / ORBIT_STEPS)));
+    }
+    return {
+      front,
+      closeup,
+      dir,
+      duration: 1.5 + Math.random() * 0.9,
+      x,
+      y,
+      rotate,
+      scale,
+      zIndex: closeup ? 60 : front ? 40 : 10 + (i % 8),
+    };
+  });
+}
+
 const PHASE_TEXT: Record<Phase, string> = {
   idle: "カードを選ぶ準備をしましょう",
-  fan: "シャッフルしています…",
-  scatter: "シャッフルしています…",
+  expanding: "シャッフルしています…",
+  storm: "舞うカードに触れてみてください",
+  vortex: "運命のカードが集まっていきます…",
   grid: "直感で1枚選んでください",
-  reveal: "",
+  selected: "",
+  result: "",
 };
 
 export default function CardShuffleDemo() {
@@ -49,15 +124,16 @@ export default function CardShuffleDemo() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [selectable, setSelectable] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [scatterSeed, setScatterSeed] = useState(0);
+  const [reactingId, setReactingId] = useState<number | null>(null);
+  const [orbits, setOrbits] = useState<StormOrbit[] | null>(null);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const reduced = !!useReducedMotion();
 
   // 盤面サイズを計測(リサイズにも追従)
   useLayoutEffect(() => {
     const el = boardRef.current;
     if (!el) return;
-    const measure = () =>
-      setBoard({ w: el.clientWidth, h: el.clientHeight });
+    const measure = () => setBoard({ w: el.clientWidth, h: el.clientHeight });
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -73,6 +149,8 @@ export default function CardShuffleDemo() {
     timersRef.current.forEach(clearTimeout);
     timersRef.current = [];
   };
+  const later = (fn: () => void, ms: number) =>
+    timersRef.current.push(setTimeout(fn, ms));
 
   // カードサイズ:横6枚・縦8枚が収まる最大サイズ
   const cardW = useMemo(() => {
@@ -83,27 +161,16 @@ export default function CardShuffleDemo() {
   }, [board]);
   const cardH = Math.floor(cardW * CARD_RATIO);
 
-  // シャッフル中のランダムな飛散位置(seedが変わるたびに再生成)
-  const scatterTargets = useMemo(() => {
-    if (!board.w || scatterSeed === 0) return null;
-    const rangeX = board.w / 2 - cardW * 0.7;
-    const rangeY = board.h / 2 - cardH * 0.7;
-    return Array.from({ length: CARD_COUNT }, () => ({
-      x: (Math.random() * 2 - 1) * rangeX,
-      y: (Math.random() * 2 - 1) * rangeY,
-      rotate: (Math.random() * 2 - 1) * 200,
-      scale: 0.85 + Math.random() * 0.6,
-    }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scatterSeed, board, cardW, cardH]);
-
   const getTarget = useCallback(
     (i: number): Target => {
+      const o = orbits?.[i];
+      const dir = o?.dir ?? 1;
+      const spin = dir * SPIN_TURNS; // 360の倍数なので見た目は正面
       const base: Target = { x: 0, y: 0, rotate: 0, scale: 1, opacity: 1, zIndex: i };
 
       switch (phase) {
         case "idle": {
-          // 中央に積まれた山札。わずかな揺らぎで「束」に見せる
+          // 中央に積まれた山札
           return {
             ...base,
             x: (pseudoRandom(i) - 0.5) * 3,
@@ -112,8 +179,8 @@ export default function CardShuffleDemo() {
             scale: 1.75,
           };
         }
-        case "fan": {
-          // 扇状に展開
+        case "expanding": {
+          // 扇状に一気に展開
           const t = i / (CARD_COUNT - 1);
           const angle = -75 + 150 * t;
           const rad = (angle * Math.PI) / 180;
@@ -126,10 +193,23 @@ export default function CardShuffleDemo() {
             scale: 1.25,
           };
         }
-        case "scatter": {
-          const s = scatterTargets?.[i];
-          if (!s) return base;
-          return { ...base, ...s };
+        case "storm": {
+          // stormは描画側でキーフレーム軌道を直接渡すため通常は到達しない
+          return base;
+        }
+        case "vortex": {
+          // 渦を巻きながら中央へ収束(スパイラルの中間点を経由)
+          if (reduced) {
+            return { ...base, scale: 1.05, rotate: spin };
+          }
+          const theta = (i / CARD_COUNT) * Math.PI * 4 + dir; // 2本腕の渦
+          return {
+            ...base,
+            x: [null, Math.cos(theta) * board.w * 0.26, 0],
+            y: [null, Math.sin(theta) * board.h * 0.2, 0],
+            rotate: [null, spin - dir * 140, spin],
+            scale: [null, 0.95, 1.08],
+          };
         }
         case "grid": {
           const col = i % COLS;
@@ -138,108 +218,104 @@ export default function CardShuffleDemo() {
             ...base,
             x: (col - (COLS - 1) / 2) * (cardW + GAP),
             y: (row - (ROWS - 1) / 2) * (cardH + GAP),
+            rotate: spin,
           };
         }
-        case "reveal": {
+        case "selected":
+        case "result": {
           if (i === selectedId) {
-            // 選ばれた1枚だけ中央に拡大
-            const scale = Math.min((board.w * 0.52) / cardW, (board.h * 0.62) / cardH);
-            return { ...base, y: -board.h * 0.13, scale, zIndex: 100 };
+            // 選ばれた1枚だけ中央に浮き上がる
+            const scale = Math.min(
+              (board.w * 0.52) / cardW,
+              (board.h * 0.62) / cardH
+            );
+            return { ...base, y: -board.h * 0.13, rotate: spin, scale, zIndex: 100 };
           }
-          // 他のカードは薄くフェードアウト
+          // 他のカードは暗くフェードアウト
           return {
             ...base,
-            x: (i % COLS - (COLS - 1) / 2) * (cardW + GAP),
+            x: ((i % COLS) - (COLS - 1) / 2) * (cardW + GAP),
             y: (Math.floor(i / COLS) - (ROWS - 1) / 2) * (cardH + GAP),
-            scale: 0.85,
+            rotate: spin,
+            scale: 0.82,
             opacity: 0,
           };
         }
       }
     },
-    [phase, board, cardW, cardH, scatterTargets, selectedId]
+    [phase, board, cardW, cardH, orbits, selectedId, reduced]
   );
 
-  const transitionFor = (i: number) => {
+  const transitionFor = (i: number): Transition => {
     switch (phase) {
-      case "fan":
-        return { duration: 0.55, delay: i * 0.003, ease: [0.3, 0.7, 0.4, 1] as const };
-      case "scatter":
-        return { duration: 0.68, delay: pseudoRandom(i + 7) * 0.08, ease: "easeInOut" as const };
+      case "expanding":
+        return { duration: 0.5, delay: i * 0.006, ease: [0.2, 0.8, 0.3, 1] };
+      case "vortex":
+        return reduced
+          ? { duration: 0.5 }
+          : { duration: 0.9, delay: i * 0.004, times: [0, 0.55, 1], ease: "easeInOut" };
       case "grid":
-        return { duration: 0.62, delay: i * 0.0035, ease: [0.22, 1, 0.36, 1] as const };
-      case "reveal":
-        return { duration: 0.55, ease: [0.3, 0.7, 0.3, 1] as const };
+        return { duration: 0.65, delay: i * 0.0035, ease: [0.22, 1, 0.36, 1] };
+      case "selected":
+      case "result":
+        return { duration: 0.55, ease: [0.3, 0.7, 0.3, 1] };
       default:
-        return { duration: 0.5, ease: "easeOut" as const };
+        return { duration: 0.55, ease: "easeOut" };
     }
   };
 
-  // 演出フロー:扇(0.7s) → 舞う(1.5s / 中間で再拡散) → 整列(0.8s)
+  // 演出フロー:
+  // expanding(0.7s) → storm(2.3s / タップ反応可) → vortex(0.95s) → grid(整列後にタップで選択)
   const handleShuffle = () => {
-    if (phase !== "idle") return;
+    if (phase !== "idle" || !board.w) return;
     clearTimers();
     setSelectable(false);
     setSelectedId(null);
-    setPhase("fan");
-    const t = (fn: () => void, ms: number) =>
-      timersRef.current.push(setTimeout(fn, ms));
-    t(() => {
-      setScatterSeed(Date.now());
-      setPhase("scatter");
-    }, 700);
-    t(() => setScatterSeed(Date.now() + 1), 1450); // 中間でもう一度舞わせる
-    t(() => setPhase("grid"), 2200);
-    t(() => setSelectable(true), 3000); // 整列完了後のみタップ可能
+    setReactingId(null);
+    setOrbits(makeStormOrbits(board.w, board.h));
+    setPhase("expanding");
+    later(() => setPhase("storm"), 700);
+    later(() => setPhase("vortex"), 3000);
+    later(() => setPhase("grid"), 3950);
+    later(() => setSelectable(true), 4700);
   };
 
-  const handleSelect = (id: number) => {
-    if (!selectable || phase !== "grid") return; // 選択後の再選択は不可
-    setSelectable(false);
-    setSelectedId(id);
-    setPhase("reveal");
+  const handleTap = (i: number) => {
+    if (phase === "storm") {
+      // シャッフル中のタップは「反応演出」のみ。選択確定にはしない
+      if (reactingId !== null) return;
+      setReactingId(i);
+      later(() => setReactingId(null), 850);
+      return;
+    }
+    if (phase === "grid" && selectable) {
+      // 整列後のタップで選択確定(以降の再選択は不可)
+      setSelectable(false);
+      setSelectedId(i);
+      setPhase("selected");
+      later(() => setPhase("result"), 1500);
+    }
   };
 
   const handleRetry = () => {
     clearTimers();
     setSelectedId(null);
+    setReactingId(null);
     setSelectable(false);
     setPhase("idle");
   };
 
-  // 背景の星(決定的な位置なのでSSRでも安全)
-  const stars = useMemo(
-    () =>
-      Array.from({ length: 26 }, (_, i) => ({
-        left: `${pseudoRandom(i * 3 + 1) * 100}%`,
-        top: `${pseudoRandom(i * 3 + 2) * 100}%`,
-        size: 1 + pseudoRandom(i * 3 + 3) * 2,
-        delay: pseudoRandom(i * 5 + 4) * 3,
-      })),
-    []
-  );
-
+  const storming = phase === "storm" && !!orbits;
+  const effectsActive =
+    phase === "expanding" || phase === "storm" || phase === "vortex";
   const selectedCard = selectedId !== null ? CARDS[selectedId] : null;
 
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden">
-      {/* 星空 */}
-      {stars.map((s, i) => (
-        <span
-          key={i}
-          className="star"
-          style={{
-            left: s.left,
-            top: s.top,
-            width: s.size,
-            height: s.size,
-            animationDelay: `${s.delay}s`,
-          }}
-        />
-      ))}
+      <MagicParticles active={effectsActive} />
 
       {/* ヘッダー */}
-      <header className="z-10 flex flex-col items-center gap-2 pb-2 pt-8">
+      <header className="z-20 flex flex-col items-center gap-2 pb-2 pt-8">
         <p className="text-[10px] tracking-[0.5em] text-gold-500/70">
           TAROT READING
         </p>
@@ -249,7 +325,7 @@ export default function CardShuffleDemo() {
       </header>
 
       {/* メッセージ */}
-      <div className="z-10 flex h-8 items-center justify-center">
+      <div className="z-20 flex h-8 items-center justify-center">
         <motion.p
           key={PHASE_TEXT[phase]}
           className="text-sm tracking-[0.15em] text-gold-300/90"
@@ -263,9 +339,106 @@ export default function CardShuffleDemo() {
 
       {/* 盤面 */}
       <div ref={boardRef} className="relative z-10 mx-4 flex-1">
+        <VortexEffect phase={phase} />
+
+        {/* motion blur風の残像ゴースト(前面カードの軌道を少し遅れて追従) */}
+        {storming &&
+          !reduced &&
+          cardW > 0 &&
+          orbits!.map((o, i) =>
+            o.front ? (
+              <motion.div
+                key={`ghost-${i}`}
+                className="pointer-events-none absolute left-1/2 top-1/2 rounded-[8%] border border-gold-500/25 will-change-transform"
+                style={{
+                  width: cardW,
+                  height: cardH,
+                  marginLeft: -cardW / 2,
+                  marginTop: -cardH / 2,
+                  zIndex: 5,
+                  background:
+                    "linear-gradient(150deg, rgba(96,165,250,0.25), rgba(167,139,250,0.3) 50%, rgba(230,200,119,0.25))",
+                }}
+                initial={{
+                  x: o.x[0],
+                  y: o.y[0],
+                  rotate: 0,
+                  scale: o.scale[0],
+                  opacity: 0,
+                }}
+                animate={{
+                  x: o.x,
+                  y: o.y,
+                  rotate: o.rotate,
+                  scale: o.scale,
+                  opacity: 0.35,
+                }}
+                transition={{
+                  duration: o.duration,
+                  ease: "linear",
+                  repeat: Infinity,
+                  delay: 0.1,
+                  opacity: { duration: 0.3, delay: 0.2 },
+                }}
+              />
+            ) : null
+          )}
+
+        {/* カード本体 */}
         {cardW > 0 &&
           CARDS.map((card, i) => {
-            const target = getTarget(i);
+            const o = orbits?.[i];
+            let animateTarget: Record<string, Kf>;
+            let trans: Transition;
+            let z: number;
+
+            if (storming && o) {
+              if (reduced) {
+                animateTarget = {
+                  x: o.x[1],
+                  y: o.y[1],
+                  rotate: 0,
+                  scale: o.scale[0],
+                  opacity: o.front ? 1 : 0.6,
+                };
+                trans = { duration: 0.5 };
+              } else {
+                animateTarget = {
+                  x: o.x,
+                  y: o.y,
+                  rotate: o.rotate,
+                  scale: o.scale,
+                  opacity: o.front ? 1 : 0.6,
+                };
+                trans = {
+                  duration: o.duration,
+                  ease: "linear",
+                  repeat: Infinity,
+                  opacity: { duration: 0.4, repeat: 0 },
+                };
+              }
+              z = o.zIndex;
+            } else {
+              const t = getTarget(i);
+              animateTarget = {
+                x: t.x,
+                y: t.y,
+                rotate: t.rotate,
+                scale: t.scale,
+                opacity: t.opacity,
+              };
+              trans = transitionFor(i);
+              z = t.zIndex;
+            }
+            if (reactingId === i) z = 200;
+
+            const mode: ReactionMode =
+              reactingId === i
+                ? "react"
+                : selectedId === i && (phase === "selected" || phase === "result")
+                  ? "chosen"
+                  : "none";
+
             return (
               <motion.div
                 key={card.id}
@@ -275,32 +448,33 @@ export default function CardShuffleDemo() {
                   height: cardH,
                   marginLeft: -cardW / 2,
                   marginTop: -cardH / 2,
-                  zIndex: target.zIndex,
+                  zIndex: z,
                 }}
-                animate={{
-                  x: target.x,
-                  y: target.y,
-                  rotate: target.rotate,
-                  scale: target.scale,
-                  opacity: target.opacity,
-                }}
-                transition={transitionFor(i)}
-                onTap={() => handleSelect(i)}
-                whileTap={selectable && phase === "grid" ? { scale: 1.12 } : undefined}
+                animate={animateTarget}
+                transition={trans}
+                onTap={() => handleTap(i)}
+                whileTap={
+                  selectable && phase === "grid" ? { scale: 1.12 } : undefined
+                }
               >
-                <TarotCard
-                  width={cardW}
-                  height={cardH}
-                  flipped={phase === "reveal" && selectedId === i}
-                  name={card.name}
-                />
+                <FloatingReactionCard mode={mode} reduced={reduced}>
+                  <TarotCard
+                    width={cardW}
+                    height={cardH}
+                    flipped={
+                      (phase === "selected" || phase === "result") &&
+                      selectedId === i
+                    }
+                    name={card.name}
+                  />
+                </FloatingReactionCard>
               </motion.div>
             );
           })}
       </div>
 
       {/* フッター(ボタン) */}
-      <footer className="z-10 flex h-32 items-start justify-center pt-4">
+      <footer className="z-20 flex h-32 items-start justify-center pt-4">
         {phase === "idle" && (
           <motion.button
             type="button"
@@ -316,7 +490,7 @@ export default function CardShuffleDemo() {
       </footer>
 
       {/* 結果表示 */}
-      {phase === "reveal" && selectedCard && (
+      {phase === "result" && selectedCard && (
         <ResultView
           name={selectedCard.name}
           message={selectedCard.message}

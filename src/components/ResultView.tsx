@@ -18,7 +18,7 @@ export default function ResultView({ name, message, onRetry }: ResultViewProps) 
       className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-4 px-8 pb-10 text-center"
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.7, delay: 1.15, ease: "easeOut" }}
+      transition={{ duration: 0.7, delay: 0.3, ease: "easeOut" }}
     >
       <div className="flex items-center gap-3 text-gold-500/80">
         <span className="h-px w-10 bg-gold-500/50" />
