@@ -7,6 +7,8 @@ type TarotCardProps = {
   width: number;
   height: number;
   flipped: boolean;
+  /** フリップ開始までの遅延(秒)。浮き上がり演出の完了後に反転させる用途 */
+  flipDelay?: number;
   name: string;
 };
 
@@ -15,13 +17,13 @@ type TarotCardProps = {
  * 画像アセトは使わず、CSS + インラインSVGだけで裏面/表面を描画する。
  * flipped で裏面 → 表面へ3Dフリップする。
  */
-function TarotCard({ width, height, flipped, name }: TarotCardProps) {
+function TarotCard({ width, height, flipped, flipDelay = 0.45, name }: TarotCardProps) {
   return (
     <div className="perspective-1200" style={{ width, height }}>
       <motion.div
         className="preserve-3d relative h-full w-full"
         animate={{ rotateY: flipped ? 180 : 0 }}
-        transition={{ duration: 0.7, delay: flipped ? 0.45 : 0, ease: [0.45, 0, 0.25, 1] }}
+        transition={{ duration: 0.7, delay: flipped ? flipDelay : 0, ease: [0.45, 0, 0.25, 1] }}
       >
         {/* ---- 裏面 ---- */}
         <div

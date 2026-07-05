@@ -10,12 +10,11 @@ const STREAK_COLORS = ["#a78bfa", "#60a5fa", "#e6c877"];
  * 中央の光エフェクト群。
  * - expanding: 光のバースト + 魔法陣がフェードイン
  * - storm:     魔法陣が回転し続け、紫・青・金の光の軌跡(アーク)が周回する
- * - vortex:    光のリングが中央に収束する
+ * - selected:  魔法陣と軌跡が静かにフェードアウトし、選択カードに視線を集める
  * すべて transform / opacity 中心で、box-shadowは使わない。
  */
 function VortexEffect({ phase }: { phase: Phase }) {
-  const circleVisible =
-    phase === "expanding" || phase === "storm" || phase === "vortex";
+  const circleVisible = phase === "expanding" || phase === "storm";
 
   return (
     <div className="pointer-events-none absolute inset-0">
@@ -98,16 +97,16 @@ function VortexEffect({ phase }: { phase: Phase }) {
           </div>
         ))}
 
-      {/* 渦フェーズ:中央へ収束する光のリング */}
-      {phase === "vortex" &&
+      {/* 選択確定の瞬間:中央へ収束する光のリング */}
+      {phase === "selected" &&
         [0, 1, 2].map((k) => (
           <div key={k} className="absolute inset-0 flex items-center justify-center">
             <motion.div
               className="aspect-square w-[72%] rounded-full border-2"
               style={{ borderColor: k === 1 ? "#a78bfa" : "#e6c877" }}
               initial={{ scale: 2.2, opacity: 0 }}
-              animate={{ scale: 0.12, opacity: [0, 0.8, 0] }}
-              transition={{ duration: 0.85, delay: k * 0.14, ease: "easeIn" }}
+              animate={{ scale: 0.12, opacity: [0, 0.7, 0] }}
+              transition={{ duration: 1.1, delay: k * 0.18, ease: "easeIn" }}
             />
           </div>
         ))}
