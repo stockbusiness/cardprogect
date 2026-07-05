@@ -17,15 +17,13 @@ function pr(n: number) {
  * 中央の光エフェクト群。
  * - expanding: 光のバースト + 魔法陣がフェードイン
  * - storm:     魔法陣の回転、光の軌跡(アーク)、中央を通るカードを照らす明滅
- * - vortex:    光のリングが収束し、粒子が中央に吸い込まれる
- * - grid:      整列の瞬間に閃光
+ * - selected:  光のリングが収束し、粒子が選択カードに吸い込まれる
  * すべて transform / opacity 中心で、box-shadowは使わない。
  */
 function VortexEffect({ phase }: { phase: Phase }) {
-  const circleVisible =
-    phase === "expanding" || phase === "storm" || phase === "vortex";
+  const circleVisible = phase === "expanding" || phase === "storm";
 
-  // 渦フェーズで中央に吸い込まれる粒子
+  // 選択の瞬間に中央へ吸い込まれる粒子
   const implosion = useMemo(
     () =>
       Array.from({ length: 12 }, (_, i) => {
@@ -110,8 +108,8 @@ function VortexEffect({ phase }: { phase: Phase }) {
           </div>
         ))}
 
-      {/* 渦フェーズ:収束する光のリング+吸い込まれる粒子 */}
-      {phase === "vortex" && (
+      {/* 選択確定の瞬間:収束する光のリング+吸い込まれる粒子 */}
+      {phase === "selected" && (
         <>
           {[0, 1, 2].map((k) => (
             <div key={k} className="absolute inset-0 flex items-center justify-center">
@@ -119,8 +117,8 @@ function VortexEffect({ phase }: { phase: Phase }) {
                 className="aspect-square w-[72%] rounded-full border-2"
                 style={{ borderColor: k === 1 ? "#a78bfa" : "#e6c877" }}
                 initial={{ scale: 2.2, opacity: 0 }}
-                animate={{ scale: 0.12, opacity: [0, 0.8, 0] }}
-                transition={{ duration: 0.85, delay: k * 0.14, ease: "easeIn" }}
+                animate={{ scale: 0.12, opacity: [0, 0.75, 0] }}
+                transition={{ duration: 1.1, delay: k * 0.18, ease: "easeIn" }}
               />
             </div>
           ))}
@@ -132,28 +130,13 @@ function VortexEffect({ phase }: { phase: Phase }) {
                 style={{ background: p.color }}
                 initial={{ x: `${p.x}vw`, y: `${p.y}vh`, opacity: 0, scale: 1 }}
                 animate={{ x: "0vw", y: "0vh", opacity: [0, 1, 0.9, 0], scale: 0.3 }}
-                transition={{ duration: 0.8, delay: p.delay, ease: "easeIn" }}
+                transition={{ duration: 1.0, delay: p.delay, ease: "easeIn" }}
               />
             ))}
           </div>
         </>
       )}
 
-      {/* 整列の瞬間の閃光 */}
-      {phase === "grid" && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <motion.div
-            className="h-72 w-72 rounded-full"
-            style={{
-              background:
-                "radial-gradient(circle, rgba(243,223,162,0.85) 0%, rgba(167,139,250,0.4) 40%, transparent 70%)",
-            }}
-            initial={{ scale: 0.3, opacity: 0 }}
-            animate={{ scale: 3.2, opacity: [0, 0.9, 0] }}
-            transition={{ duration: 0.7, times: [0, 0.25, 1], ease: "easeOut" }}
-          />
-        </div>
-      )}
     </div>
   );
 }

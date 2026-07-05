@@ -52,8 +52,8 @@ export default function FloatingReactionCard({
         />
       )}
 
-      {/* タップ反応:飛び散る光の粒 */}
-      {mode === "react" &&
+      {/* タップの瞬間に飛び散る光の粒 */}
+      {mode !== "none" &&
         !reduced &&
         SPARKS.map((s, i) => (
           <span
