@@ -147,6 +147,59 @@ class SoundManager {
     lfo.stop(ctx.currentTime + 0.8);
   }
 
+  /** シャッフル中のタップ反応:小さな鈴 */
+  playTap() {
+    this.tone(1174.7, { dur: 0.28, vol: 0.1 });
+    this.tone(1568, { start: 0.05, dur: 0.35, vol: 0.08 });
+  }
+
+  /** 渦への吸い込み:下降する風 */
+  playVortex() {
+    const ctx = this.ensure();
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer(ctx);
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(2200, t);
+    bp.frequency.exponentialRampToValueAtTime(220, t + 0.8);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.42, t + 0.1);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    src.connect(bp);
+    bp.connect(g);
+    g.connect(this.master);
+    src.start(t);
+    src.stop(t + 1);
+    this.tone(1046.5, { type: "triangle", dur: 0.8, vol: 0.1, glideTo: 262 });
+  }
+
+  /** 閃光:ノイズバースト+高いきらめき */
+  playFlash() {
+    const ctx = this.ensure();
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer(ctx);
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = 0.7;
+    bp.frequency.value = 3200;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.45, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    src.connect(bp);
+    bp.connect(g);
+    g.connect(this.master);
+    src.start(t);
+    src.stop(t + 0.35);
+    this.tone(2093, { dur: 0.5, vol: 0.12 });
+    this.tone(2637, { start: 0.06, dur: 0.6, vol: 0.09 });
+  }
+
   /** カード選択:ベルのアルペジオ+低音の余韻 */
   playSelect() {
     [659.25, 783.99, 987.77, 1318.5].forEach((f, k) =>

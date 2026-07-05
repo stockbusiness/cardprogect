@@ -66,6 +66,30 @@ function MagicParticles({ active }: MagicParticlesProps) {
         />
       ))}
 
+      {/* 流れる霧 */}
+      <span
+        className="fog"
+        style={{
+          left: "-20%",
+          top: "12%",
+          width: 320,
+          height: 200,
+          background: "radial-gradient(ellipse, rgba(110,120,190,0.14) 0%, transparent 70%)",
+        }}
+      />
+      <span
+        className="fog"
+        style={{
+          left: "40%",
+          top: "58%",
+          width: 380,
+          height: 240,
+          background: "radial-gradient(ellipse, rgba(90,80,170,0.12) 0%, transparent 70%)",
+          animationDelay: "-8s",
+          animationDuration: "20s",
+        }}
+      />
+
       {/* 星雲風のオーブ */}
       <span
         className="orb"

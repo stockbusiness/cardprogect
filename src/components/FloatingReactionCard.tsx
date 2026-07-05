@@ -19,12 +19,21 @@ type FloatingReactionCardProps = {
  * 外側のレイヤー(位置・軌道)には触れず、内側だけを拡大+ゴールドの縁取りで光らせるため、
  * シャッフルの動きを止めずに「浮き上がる」演出ができる。
  */
+const SPARKS = Array.from({ length: 7 }, (_, i) => {
+  const a = (i / 7) * Math.PI * 2 + 0.4;
+  return {
+    dx: `${Math.cos(a) * (26 + (i % 3) * 10)}px`,
+    dy: `${Math.sin(a) * (26 + ((i + 1) % 3) * 10)}px`,
+    delay: `${i * 0.03}s`,
+  };
+});
+
 export default function FloatingReactionCard({
   mode,
   reduced,
   children,
 }: FloatingReactionCardProps) {
-  const popScale = mode === "react" ? (reduced ? 1.15 : 1.85) : 1;
+  const popScale = mode === "react" ? (reduced ? 1.15 : 1.7) : 1;
 
   return (
     <motion.div
@@ -42,6 +51,23 @@ export default function FloatingReactionCard({
           }}
         />
       )}
+
+      {/* タップ反応:飛び散る光の粒 */}
+      {mode === "react" &&
+        !reduced &&
+        SPARKS.map((s, i) => (
+          <span
+            key={i}
+            className="sparkle"
+            style={
+              {
+                "--sp-dx": s.dx,
+                "--sp-dy": s.dy,
+                animationDelay: s.delay,
+              } as React.CSSProperties
+            }
+          />
+        ))}
 
       {children}
 

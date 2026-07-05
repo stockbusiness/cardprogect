@@ -77,14 +77,16 @@ body {
   will-change: transform, opacity;
 }
 
-/* 星雲風のぼんやりした光 */
+/* 星雲風のぼんやりした光(ゆっくり漂い、明滅する) */
 @keyframes orbFloat {
   0%,
   100% {
     transform: translate3d(0, 0, 0);
+    opacity: 0.65;
   }
   50% {
     transform: translate3d(22px, -30px, 0);
+    opacity: 1;
   }
 }
 .orb {
@@ -93,7 +95,88 @@ body {
   filter: blur(28px);
   animation: orbFloat 12s ease-in-out infinite;
   pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* 流れる霧 */
+@keyframes fogDrift {
+  0% {
+    transform: translate3d(-6%, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6%, -4%, 0) scale(1.12);
+  }
+  100% {
+    transform: translate3d(-6%, 0, 0) scale(1);
+  }
+}
+.fog {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(46px);
+  animation: fogDrift 16s ease-in-out infinite;
+  pointer-events: none;
   will-change: transform;
+}
+
+/* 山札の周囲の脈動する光 */
+@keyframes pulseGlow {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.18);
+  }
+}
+.pulse-glow {
+  animation: pulseGlow 3.6s ease-in-out infinite;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* 中央を通るカードを照らす淡い明滅 */
+@keyframes centerPulse {
+  0%,
+  100% {
+    opacity: 0.12;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.15);
+  }
+}
+.center-pulse {
+  animation: centerPulse 1.6s ease-in-out infinite;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* タップ反応で飛び散る光の粒 */
+@keyframes sparkleOut {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--sp-dx, 20px), var(--sp-dy, -20px)) scale(0.3);
+    opacity: 0;
+  }
+}
+.sparkle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: #f3dfa2;
+  box-shadow: 0 0 8px #e6c877;
+  animation: sparkleOut 0.7s ease-out forwards;
+  pointer-events: none;
 }
 
 /* 魔法陣の回転・光の軌跡 */
@@ -124,7 +207,11 @@ body {
   .star,
   .spin-slow,
   .spin-slow-rev,
-  .streak {
+  .streak,
+  .fog,
+  .pulse-glow,
+  .center-pulse,
+  .sparkle {
     animation: none !important;
   }
 }
