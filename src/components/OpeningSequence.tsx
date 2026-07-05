@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import MagicCircle from "@/components/MagicCircle";
+import { soundManager } from "@/lib/sound";
 
 // SSRとクライアントで一致する決定的な擬似乱数
 function pr(n: number) {
@@ -11,30 +12,49 @@ function pr(n: number) {
 }
 
 const SIL_COUNT = 14;
-const TOTAL = 6.6; // 全体の長さ(秒)
+const TOTAL = 10; // 本編の長さ(秒)
 
 /**
- * ページアクセス時のオープニング演出(約6.6秒)。
- * 闇と霧 → 光の粒子 → 宇宙的な背景 → 魔法陣 → カードの影 →
+ * ページアクセス時のオープニング演出。
+ * 最初に「タップして始める」ゲートを表示し、そのタップ(ユーザー操作)を
+ * きっかけにBGM付きの本編(約10秒)を再生する。ブラウザの自動再生制限のため、
+ * 音を鳴らすにはこのゲートが必要。
+ *
+ * 本編:闇と霧 → 光の粒子 → 宇宙的な背景 → 魔法陣 → カードの影 →
  * 一斉に舞い上がって渦を描く → 閃光 → 霧が晴れてトップ画面へ。
- * タップでスキップ可能。すべて transform / opacity のみ。
+ * 本編中のタップでスキップ可能。すべて transform / opacity のみ。
  */
 export default function OpeningSequence({ onDone }: { onDone: () => void }) {
   const reduced = !!useReducedMotion();
+  const [started, setStarted] = useState(false);
   const doneRef = useRef(false);
-  const finish = () => {
-    if (!doneRef.current) {
-      doneRef.current = true;
-      onDone();
-    }
+
+  const finish = (skipped: boolean) => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    if (skipped) soundManager.stopOpening(); // 自然終了時は余韻を残す
+    onDone();
   };
   const finishRef = useRef(finish);
   finishRef.current = finish;
 
   useEffect(() => {
-    const t = setTimeout(() => finishRef.current(), reduced ? 1400 : TOTAL * 1000);
+    if (!started) return;
+    const t = setTimeout(
+      () => finishRef.current(false),
+      reduced ? 1400 : TOTAL * 1000
+    );
     return () => clearTimeout(t);
-  }, [reduced]);
+  }, [started, reduced]);
+
+  const handleTap = () => {
+    if (!started) {
+      if (!reduced) soundManager.startOpening(TOTAL);
+      setStarted(true);
+      return;
+    }
+    finish(true);
+  };
 
   // カードの影の軌道(出現位置・飛散方向・渦の経由点)
   const sils = useMemo(
@@ -54,7 +74,7 @@ export default function OpeningSequence({ onDone }: { onDone: () => void }) {
           cx: `${Math.cos(a2) * 26}vw`,
           cy: `${Math.sin(a2) * 20}vh`,
           rot: dir * (540 + Math.floor(pr(i + 60) * 3) * 180),
-          delay: pr(i + 80) * 0.15,
+          delay: pr(i + 80) * 0.2,
         };
       }),
     []
@@ -71,6 +91,55 @@ export default function OpeningSequence({ onDone }: { onDone: () => void }) {
     []
   );
 
+  // ---- ゲート画面(タップで開始 = 音声の解禁) ----
+  if (!started) {
+    return (
+      <motion.div
+        className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-6 overflow-hidden"
+        style={{ background: "#04060f" }}
+        onTap={handleTap}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.8 }}
+      >
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-25">
+          <div className="relative aspect-square w-[110%] max-w-[460px]">
+            <MagicCircle />
+          </div>
+        </div>
+        {stars.slice(0, 18).map((s, i) => (
+          <span
+            key={`gs-${i}`}
+            className="star"
+            style={{
+              left: s.left,
+              top: s.top,
+              width: s.size,
+              height: s.size,
+              animationDelay: s.delay,
+            }}
+          />
+        ))}
+        <p className="text-[10px] tracking-[0.5em] text-gold-500/70">
+          TAROT READING
+        </p>
+        <h1 className="text-2xl font-semibold tracking-[0.3em] text-gold-300">
+          運命のカード診断
+        </h1>
+        <motion.p
+          className="mt-8 text-sm tracking-[0.35em] text-gold-300/90"
+          animate={{ opacity: [0.35, 1, 0.35] }}
+          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        >
+          タップして始める
+        </motion.p>
+        <p className="text-[10px] tracking-[0.2em] text-gold-300/40">
+          ※ 音が流れます
+        </p>
+      </motion.div>
+    );
+  }
+
   if (reduced) {
     // 動きを減らす設定では黒からのフェードのみ
     return (
@@ -79,18 +148,19 @@ export default function OpeningSequence({ onDone }: { onDone: () => void }) {
         initial={{ opacity: 1 }}
         animate={{ opacity: 0 }}
         transition={{ duration: 1.2, delay: 0.2 }}
-        onTap={finish}
+        onTap={handleTap}
       />
     );
   }
 
+  // ---- 本編(約10秒) ----
   return (
     <motion.div
       className="fixed inset-0 z-40 overflow-hidden"
       style={{ background: "#04060f" }}
       animate={{ opacity: [1, 1, 0] }}
-      transition={{ duration: TOTAL, times: [0, 0.9, 1], ease: "easeInOut" }}
-      onTap={finish}
+      transition={{ duration: TOTAL, times: [0, 0.92, 1], ease: "easeInOut" }}
+      onTap={handleTap}
     >
       {/* 宇宙のような背景(ゆっくり見えてくる) */}
       <motion.div
@@ -101,7 +171,7 @@ export default function OpeningSequence({ onDone }: { onDone: () => void }) {
         }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 1.6, delay: 1.4 }}
+        transition={{ duration: 2.0, delay: 2.2 }}
       />
 
       {/* 霧(ゆっくり広がる) */}
@@ -123,7 +193,7 @@ export default function OpeningSequence({ onDone }: { onDone: () => void }) {
           }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 1.6, delay: 0.2 + i * 0.3 }}
+          transition={{ duration: 2.0, delay: 0.2 + i * 0.4 }}
         />
       ))}
 
@@ -132,7 +202,7 @@ export default function OpeningSequence({ onDone }: { onDone: () => void }) {
         className="absolute inset-0"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 1.4, delay: 1.0 }}
+        transition={{ duration: 1.8, delay: 1.2 }}
       >
         {stars.map((s, i) => (
           <span
@@ -154,8 +224,8 @@ export default function OpeningSequence({ onDone }: { onDone: () => void }) {
         <motion.div
           className="relative aspect-square w-[92%] max-w-[380px]"
           initial={{ opacity: 0, scale: 0.55 }}
-          animate={{ opacity: [0, 0.95, 0.95, 0.4], scale: [0.55, 1, 1.04, 1.15] }}
-          transition={{ duration: TOTAL - 2.2, delay: 2.2, times: [0, 0.35, 0.8, 1] }}
+          animate={{ opacity: [0, 0.95, 0.95, 0.4], scale: [0.55, 1, 1.05, 1.18] }}
+          transition={{ duration: TOTAL - 3.2, delay: 3.2, times: [0, 0.3, 0.85, 1] }}
         >
           <MagicCircle />
         </motion.div>
@@ -180,9 +250,9 @@ export default function OpeningSequence({ onDone }: { onDone: () => void }) {
               opacity: [0, 0.85, 1, 1, 0],
             }}
             transition={{
-              duration: 3.3,
-              delay: 3.0 + s.delay,
-              times: [0, 0.2, 0.45, 0.75, 1],
+              duration: 4.6,
+              delay: 5.0 + s.delay,
+              times: [0, 0.26, 0.52, 0.78, 1],
               ease: "easeInOut",
             }}
           />
@@ -194,7 +264,7 @@ export default function OpeningSequence({ onDone }: { onDone: () => void }) {
         className="absolute inset-0 flex items-center justify-center"
         initial={{ opacity: 0 }}
         animate={{ opacity: [0, 0.7, 0] }}
-        transition={{ duration: 2.4, delay: 4.0, times: [0, 0.5, 1] }}
+        transition={{ duration: 2.6, delay: 7.2, times: [0, 0.5, 1] }}
       >
         <div
           className="streak aspect-square w-[70%]"
@@ -221,7 +291,7 @@ export default function OpeningSequence({ onDone }: { onDone: () => void }) {
         }}
         initial={{ opacity: 0 }}
         animate={{ opacity: [0, 0, 1, 0] }}
-        transition={{ duration: TOTAL, times: [0, 0.82, 0.88, 1] }}
+        transition={{ duration: TOTAL, times: [0, 0.88, 0.925, 1] }}
       />
 
       {/* スキップ案内 */}
