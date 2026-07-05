@@ -1,0 +1,52 @@
+@import url("https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: "Shippori Mincho", "Hiragino Mincho ProN", serif;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(58, 78, 160, 0.35), transparent 70%),
+    radial-gradient(ellipse 60% 40% at 50% 110%, rgba(26, 37, 87, 0.5), transparent 70%),
+    #070b1c;
+}
+
+/* 3D flip helpers */
+.perspective-1200 {
+  perspective: 1200px;
+}
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+.backface-hidden {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Twinkling stars in the background */
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.1);
+  }
+}
+.star {
+  position: absolute;
+  border-radius: 9999px;
+  background: #f3dfa2;
+  animation: twinkle 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
