@@ -17,6 +17,7 @@ import FloatingReactionCard, {
   type ReactionMode,
 } from "@/components/FloatingReactionCard";
 import { CARDS, CARD_COUNT } from "@/lib/cards";
+import { soundManager } from "@/lib/sound";
 import type { Phase } from "@/lib/types";
 
 // シャッフル中(storm)の周回軌道。楕円軌道をキーフレーム化し、
@@ -111,6 +112,7 @@ export default function CardShuffleDemo() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [orbits, setOrbits] = useState<StormOrbit[] | null>(null);
+  const [muted, setMuted] = useState(false);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const reduced = !!useReducedMotion();
 
@@ -127,7 +129,10 @@ export default function CardShuffleDemo() {
 
   useEffect(() => {
     const timers = timersRef.current;
-    return () => timers.forEach(clearTimeout);
+    return () => {
+      timers.forEach(clearTimeout);
+      soundManager.stopStorm();
+    };
   }, []);
 
   const clearTimers = () => {
@@ -185,7 +190,11 @@ export default function CardShuffleDemo() {
     setSelectedId(null);
     setOrbits(makeStormOrbits(board.w, board.h));
     setPhase("expanding");
-    later(() => setPhase("storm"), 700);
+    soundManager.playShuffle(); // ボタンタップ直後なので自動再生制限に掛からない
+    later(() => {
+      setPhase("storm");
+      soundManager.startStorm();
+    }, 700);
   };
 
   // シャッフル中のタップ=選択確定。
@@ -194,13 +203,26 @@ export default function CardShuffleDemo() {
     if (phase !== "storm") return;
     setSelectedId(i);
     setPhase("selected");
-    later(() => setPhase("result"), reduced ? 1200 : 2600);
+    soundManager.stopStorm();
+    soundManager.playSelect();
+    later(() => soundManager.playFlip(), reduced ? 300 : 1450);
+    later(() => {
+      setPhase("result");
+      soundManager.playResult();
+    }, reduced ? 1200 : 2600);
   };
 
   const handleRetry = () => {
     clearTimers();
+    soundManager.stopStorm();
     setSelectedId(null);
     setPhase("idle");
+  };
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    soundManager.setMuted(next);
   };
 
   const storming = phase === "storm" && !!orbits;
@@ -217,6 +239,29 @@ export default function CardShuffleDemo() {
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden">
       <MagicParticles active={effectsActive} />
+
+      {/* サウンドON/OFF */}
+      <button
+        type="button"
+        onClick={toggleMute}
+        aria-label={muted ? "サウンドをオンにする" : "サウンドをオフにする"}
+        className="absolute right-4 top-8 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-gold-500/50 bg-navy-900/60 text-gold-300/90 transition active:scale-90"
+      >
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M11 5 6.5 9H3v6h3.5L11 19V5Z" fill="currentColor" stroke="none" />
+          {muted ? (
+            <>
+              <line x1="16" y1="9" x2="21" y2="15" />
+              <line x1="21" y1="9" x2="16" y2="15" />
+            </>
+          ) : (
+            <>
+              <path d="M14.5 9.5a3.5 3.5 0 0 1 0 5" />
+              <path d="M17 7a7 7 0 0 1 0 10" />
+            </>
+          )}
+        </svg>
+      </button>
 
       {/* ヘッダー */}
       <header className="z-20 flex flex-col items-center gap-2 pb-2 pt-8">
